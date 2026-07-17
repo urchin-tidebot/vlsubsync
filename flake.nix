@@ -1,10 +1,21 @@
 {
   description = "One-click subtitle synchronization for VLC";
 
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    home-manager = {
+      url = "github:nix-community/home-manager";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+  };
 
   outputs =
-    { self, nixpkgs }:
+    {
+      self,
+      nixpkgs,
+      home-manager,
+      ...
+    }:
     let
       systems = [
         "x86_64-linux"
@@ -13,73 +24,82 @@
       forAllSystems = nixpkgs.lib.genAttrs systems;
     in
     {
+      overlays.default = final: _prev: {
+        vlsubsync = final.callPackage ./nix/package.nix { src = self; };
+      };
+
+      homeManagerModules = {
+        default = import ./nix/home-manager.nix;
+        vlsubsync = self.homeManagerModules.default;
+      };
+
       packages = forAllSystems (
         system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
         in
-        {
-          default = pkgs.stdenvNoCC.mkDerivation {
-            pname = "vlsubsync";
-            version = "0.1.0";
-            src = self;
-            nativeBuildInputs = [ pkgs.makeWrapper ];
-
-            buildPhase = ''
-              runHook preBuild
-              # Nix normalizes source mtimes to the Unix epoch, but ZIP requires 1980+.
-              touch -d '1980-01-02 UTC' vlsubsync/__init__.py vlsubsync/helper.py
-              ${pkgs.python3}/bin/python -m zipapp vlsubsync \
-                -m 'helper:main' -o vlsubsync-helper.pyz
-              runHook postBuild
-            '';
-
-            installPhase = ''
-              runHook preInstall
-              install -Dm644 vlsubsync.lua \
-                "$out/share/vlc/lua/extensions/vlsubsync.lua"
-              install -Dm644 vlsubsync-helper.pyz \
-                "$out/libexec/vlsubsync-helper.pyz"
-              makeWrapper ${pkgs.python3}/bin/python "$out/bin/vlsubsync-helper" \
-                --add-flags "$out/libexec/vlsubsync-helper.pyz" \
-                --prefix PATH : ${
-                  pkgs.lib.makeBinPath [
-                    pkgs.ffsubsync
-                    pkgs.ffmpeg
-                  ]
-                }
-              runHook postInstall
-            '';
-
-            meta = {
-              description = "One-click synchronization of VLC's current subtitles";
-              homepage = "https://github.com/urchin-tidebot/vlsubsync";
-              license = pkgs.lib.licenses.mit;
-              mainProgram = "vlsubsync-helper";
-              platforms = pkgs.lib.platforms.linux;
-            };
-          };
+        rec {
+          default = vlsubsync;
+          vlsubsync = pkgs.callPackage ./nix/package.nix { src = self; };
         }
       );
 
-      checks = forAllSystems (system: {
-        unit =
-          nixpkgs.legacyPackages.${system}.runCommand "vlsubsync-tests"
-            {
-              nativeBuildInputs = with nixpkgs.legacyPackages.${system}; [
-                python3
-                lua5_1
-              ];
-            }
-            ''
-              cp -r ${self} source
-              chmod -R u+w source
-              cd source
-              python -m unittest discover -s tests -v
-              lua tests/test_extension.lua
+      checks = forAllSystems (
+        system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+        in
+        {
+          unit =
+            pkgs.runCommand "vlsubsync-tests"
+              {
+                nativeBuildInputs = with pkgs; [
+                  python3
+                  lua5_1
+                ];
+              }
+              ''
+                cp -r ${self} source
+                chmod -R u+w source
+                cd source
+                python -m unittest discover -s tests -v
+                lua tests/test_extension.lua
+                touch "$out"
+              '';
+
+          home-manager = import ./nix/tests/home-manager.nix {
+            inherit pkgs home-manager;
+            module = self.homeManagerModules.default;
+          };
+
+          overlay =
+            let
+              overlayPkgs = import nixpkgs {
+                inherit system;
+                overlays = [ self.overlays.default ];
+              };
+              fakeFfsubsync = pkgs.runCommand "fake-ffsubsync" { } ''
+                mkdir -p "$out/bin"
+                touch "$out/bin/ffs"
+                chmod +x "$out/bin/ffs"
+              '';
+              composedPkgs = import nixpkgs {
+                inherit system;
+                overlays = [
+                  (_final: _prev: { ffsubsync = fakeFfsubsync; })
+                  self.overlays.default
+                ];
+              };
+            in
+            assert overlayPkgs.vlsubsync == self.packages.${system}.vlsubsync;
+            assert self.packages.${system}.default == self.packages.${system}.vlsubsync;
+            pkgs.runCommand "vlsubsync-overlay-test" { } ''
+              test -x ${overlayPkgs.vlsubsync}/bin/vlsubsync-helper
+              grep -R -F '${fakeFfsubsync}/bin' ${composedPkgs.vlsubsync}/bin
               touch "$out"
             '';
-      });
+        }
+      );
 
       formatter = forAllSystems (system: nixpkgs.legacyPackages.${system}.nixfmt-tree);
 

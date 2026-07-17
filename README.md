@@ -31,26 +31,69 @@ python -m unittest discover -s tests -v
 lua tests/test_extension.lua
 ```
 
-## Install from the Nix flake
+## Home Manager (recommended)
 
-Add the package to your profile or Home Manager packages:
+Add VLSubSync as a flake input and follow your existing `nixpkgs`:
 
-```bash
-nix profile install .
+```nix
+{
+  inputs.vlsubsync = {
+    url = "github:urchin-tidebot/vlsubsync";
+    inputs.nixpkgs.follows = "nixpkgs";
+  };
+}
 ```
 
-The package provides:
+Import the module in your Home Manager configuration and enable it:
 
-- `bin/vlsubsync-helper`
-- `share/vlc/lua/extensions/vlsubsync.lua`
+```nix
+{ inputs, ... }:
+{
+  imports = [ inputs.vlsubsync.homeManagerModules.default ];
 
-If VLC does not discover profile-provided extension data on your setup, symlink the extension into the per-user directory:
+  programs.vlsubsync.enable = true;
+}
+```
+
+For Home Manager embedded in a NixOS configuration:
+
+```nix
+{
+  home-manager.users.shazow = {
+    imports = [ inputs.vlsubsync.homeManagerModules.default ];
+    programs.vlsubsync.enable = true;
+  };
+}
+```
+
+The module installs the helper and declaratively links the extension to
+`$XDG_DATA_HOME/vlc/lua/extensions/vlsubsync.lua`. The Nix-built extension
+contains the helper's absolute store path, so desktop-launched VLC does not
+need to inherit a particular `PATH`.
+
+To override the package:
+
+```nix
+programs.vlsubsync.package = inputs.vlsubsync.packages.${pkgs.system}.vlsubsync;
+```
+
+## Other flake outputs
+
+The flake also exports:
+
+- `packages.<system>.default` and `packages.<system>.vlsubsync`
+- `overlays.default`, which adds `pkgs.vlsubsync`
+- `homeManagerModules.default` and `homeManagerModules.vlsubsync`
+
+Package-only installation is available:
 
 ```bash
-mkdir -p ~/.local/share/vlc/lua/extensions
-ln -s "$(nix build --no-link --print-out-paths)/share/vlc/lua/extensions/vlsubsync.lua" \
-  ~/.local/share/vlc/lua/extensions/vlsubsync.lua
+nix profile install github:urchin-tidebot/vlsubsync
 ```
+
+However, VLC does not consistently scan profile-provided data directories for
+Lua extensions. Prefer the Home Manager module, or manually link the packaged
+extension into the per-user VLC extension directory.
 
 ## Portable per-user install
 

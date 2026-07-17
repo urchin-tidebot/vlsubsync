@@ -3,6 +3,7 @@
 
 local dialog = nil
 local status_label = nil
+local packaged_helper = nil
 
 function descriptor()
   return {
@@ -84,6 +85,10 @@ function parse_helper_output(output)
 end
 
 local function helper_path()
+  if packaged_helper then
+    return packaged_helper
+  end
+
   local configured = os.getenv("VLSUBSYNC_HELPER")
   if configured and configured ~= "" then
     return configured
