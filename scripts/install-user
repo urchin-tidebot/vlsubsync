@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+bin_dir="${HOME}/.local/bin"
+extension_dir="${HOME}/.local/share/vlc/lua/extensions"
+libexec_dir="${HOME}/.local/libexec/vlsubsync"
+
+mkdir -p "$bin_dir" "$extension_dir" "$libexec_dir"
+python3 -m zipapp "$repo_dir/vlsubsync" -m 'helper:main' \
+  -o "$libexec_dir/vlsubsync-helper.pyz"
+install -m 0644 "$repo_dir/vlsubsync.lua" "$extension_dir/vlsubsync.lua"
+
+wrapper="$bin_dir/vlsubsync-helper"
+# The single-quoted line is intentional: HOME and argv expand when the wrapper runs.
+# shellcheck disable=SC2016
+printf '%s\n' '#!/usr/bin/env bash' \
+  'exec python3 "$HOME/.local/libexec/vlsubsync/vlsubsync-helper.pyz" "$@"' \
+  > "$wrapper"
+chmod 0755 "$wrapper"
+
+printf 'Installed helper: %s\nInstalled extension: %s\n' \
+  "$wrapper" "$extension_dir/vlsubsync.lua"
+printf 'Ensure ffsubsync (the ffs command) and FFmpeg are available, then restart VLC.\n'
