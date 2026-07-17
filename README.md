@@ -77,6 +77,44 @@ To override the package:
 programs.vlsubsync.package = inputs.vlsubsync.packages.${pkgs.system}.vlsubsync;
 ```
 
+### Without adding a flake input
+
+You can fetch the repository from an ordinary Home Manager module and wire the
+package and VLC extension directly. Because `callPackage` uses your existing
+`pkgs`, VLSubSync reuses the same `pkgs.ffmpeg`, `pkgs.ffsubsync`, and
+`pkgs.python3` derivations selected by your configuration:
+
+```nix
+{ pkgs, ... }:
+
+let
+  src = pkgs.fetchFromGitHub {
+    owner = "urchin-tidebot";
+    repo = "vlsubsync";
+    rev = "d7902ae177753b50e435389b38416001dd1dd3f9";
+    hash = "sha256-wuTXphIeYBQEbbykwX7WxrfRw17io8y1uJFmKPwGkIg=";
+  };
+
+  vlsubsync = pkgs.callPackage "${src}/nix/package.nix" {
+    inherit src;
+  };
+in
+{
+  home.packages = [
+    pkgs.vlc
+    pkgs.ffmpeg
+    vlsubsync
+  ];
+
+  xdg.dataFile."vlc/lua/extensions/vlsubsync.lua".source =
+    "${vlsubsync}/share/vlc/lua/extensions/vlsubsync.lua";
+}
+```
+
+Update `rev` and `hash` together when upgrading. Importing `package.nix` from a
+`fetchFromGitHub` result uses import-from-derivation, which must be enabled in
+the evaluating Nix configuration.
+
 ## Other flake outputs
 
 The flake also exports:
