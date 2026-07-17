@@ -38,10 +38,12 @@ manager:
 
 1. Install `vlsubsync.lua` as
    `~/.local/share/vlc/lua/extensions/vlsubsync.lua`.
-2. Provide an executable helper at `~/.local/bin/vlsubsync-helper`. The helper
-   should run `vlsubsync.helper` with Python 3, set `VLSUBSYNC_FFS` to the
-   absolute path of `ffs`, and include the FFmpeg binary directory on `PATH`.
-   It may run the Python package directly or package it as a zipapp.
+2. Provide an executable helper at `~/.local/bin/vlsubsync-helper`. The
+   [portable installer](#portable-per-user-install) generates this helper and
+   its zipapp automatically. Custom package definitions should generate an
+   equivalent wrapper that runs `vlsubsync.helper` with Python 3, sets
+   `VLSUBSYNC_FFS` to the absolute path of `ffs`, and includes the FFmpeg binary
+   directory on `PATH`.
 3. Restart VLC.
 
 Keep the installed files and directories user-owned and not writable by group
