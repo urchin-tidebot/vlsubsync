@@ -4,6 +4,7 @@
 local dialog = nil
 local status_label = nil
 local packaged_helper = nil
+local MAX_HELPER_OUTPUT_BYTES = 131072
 
 function descriptor()
   return {
@@ -65,7 +66,18 @@ local function decode_hex(value)
   end)
 end
 
+function safe_display(value, limit)
+  local sanitized = string.gsub(value or "", "[%z\1-\31\127]", "?")
+  if string.len(sanitized) > limit then
+    return string.sub(sanitized, 1, limit) .. "…"
+  end
+  return sanitized
+end
+
 function parse_helper_output(output)
+  if string.len(output) > MAX_HELPER_OUTPUT_BYTES then
+    return "error", "The helper response exceeded the safety limit."
+  end
   local line = output
   if string.sub(line, -2) == "\r\n" then
     line = string.sub(line, 1, -3)
@@ -87,11 +99,6 @@ end
 local function helper_path()
   if packaged_helper then
     return packaged_helper
-  end
-
-  local configured = os.getenv("VLSUBSYNC_HELPER")
-  if configured and configured ~= "" then
-    return configured
   end
 
   if vlc.config and vlc.config.homedir then
@@ -116,6 +123,7 @@ local function add_subtitle(path)
 end
 
 local function set_status(message)
+  message = safe_display(message, 500)
   if status_label then
     status_label:set_text(message)
   end
@@ -139,25 +147,30 @@ function sync_current()
   end
   command = command .. " 2>&1"
 
-  vlc.msg.info("[VLSubSync] Running helper for " .. media)
+  vlc.msg.info("[VLSubSync] Running helper for " .. safe_display(media, 500))
   local pipe = io.popen(command, "r")
   if not pipe then
     set_status("Error: could not start vlsubsync-helper.")
     return
   end
-  local output = pipe:read("*a")
+  local output = pipe:read(MAX_HELPER_OUTPUT_BYTES + 1) or ""
   pipe:close()
+
+  if string.len(output) > MAX_HELPER_OUTPUT_BYTES then
+    set_status("Error: helper response exceeded the safety limit.")
+    return
+  end
 
   local result, value = parse_helper_output(output)
   if result ~= "ok" then
-    vlc.msg.err("[VLSubSync] " .. value)
+    vlc.msg.err("[VLSubSync] " .. safe_display(value, 500))
     set_status("Error: " .. value)
     return
   end
 
   if add_subtitle(value) then
     set_status("Loaded corrected subtitle: " .. value)
-    vlc.msg.info("[VLSubSync] Loaded " .. value)
+    vlc.msg.info("[VLSubSync] Loaded " .. safe_display(value, 500))
   else
     set_status("Created corrected subtitle, but VLC could not load it: " .. value)
   end

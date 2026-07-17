@@ -10,7 +10,7 @@ VLSubSync does **not** modify or depend on VLSub. Download or load subtitles nor
 2. Finds related `.srt`, `.ass`, `.ssa`, or `.vtt` files beside the media.
 3. Prefers an exact filename match, then the selected VLC 4 subtitle-track name, then the newest related file.
 4. Refuses to guess if equally plausible candidates remain.
-5. Runs `ffs` and writes `<subtitle>.synced.<ext>`.
+5. Runs `ffs`, writes `<subtitle>.synced.<ext>` into a private per-user cache directory, and atomically publishes it without replacing existing filesystem objects.
 6. Loads the corrected subtitle into VLC while preserving the original.
 
 VLC 3 does not expose selected subtitle-track metadata to Lua, so filename and modification time are used there. VLC 4 also uses the selected track name when available.
@@ -141,16 +141,23 @@ With Python, `ffs`, and FFmpeg already on `PATH`:
 ./scripts/install-user
 ```
 
+The installer resolves and records the absolute Python, `ffs`, and FFmpeg paths, constructs a minimal runtime `PATH`, and refuses symlinked installation directories or destination files. It intentionally supports only user-owned directories that are not writable by group or others under `~/.local`. Because dependency selection happens at installation time, run the installer only with a trusted `PATH`.
+
 Restart VLC, then choose **View → VLSubSync** and click **Resync current subtitles**. Depending on the desktop integration, VLC extensions may instead appear under **Tools → Plugins and extensions**.
 
 Synchronization analyzes the media's audio and commonly takes tens of seconds. Playback can continue while it runs, although the extension dialog remains busy.
 
 ## Safety
 
-- Original subtitle files are never overwritten.
+- Media and subtitle inputs must be ordinary files; symbolic links, FIFOs, devices, and other special files are rejected.
+- Subtitle content is copied into the private cache before parsing, and the media inode is pinned through an open file descriptor during synchronization.
+- Original subtitle files are never overwritten. Generated output is published atomically without replacing any existing file, symlink, or other object.
+- Subtitle and generated-output sizes, helper diagnostics, and Lua protocol responses are bounded; synchronization is terminated after 15 minutes.
 - Previously generated `.synced` files are excluded from candidate discovery.
 - Ambiguous candidates produce an error instead of a guess.
 - Only local media files are supported in V1.
+
+`ffmpeg` and `ffsubsync` still parse untrusted media and subtitle content. Keep those dependencies updated. VLSubSync constrains their inputs, output, runtime, diagnostics, and lingering child processes, but it does not place them in an OS-level privilege sandbox; a successful parser code-execution vulnerability would therefore run with the user's access. Use an externally sandboxed VLC/helper environment when processing media that requires stronger isolation.
 
 ## Development
 

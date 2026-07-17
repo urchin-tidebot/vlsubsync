@@ -1,24 +1,134 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
+
+die() {
+  printf 'VLSubSync installer: %s\n' "$*" >&2
+  exit 1
+}
+
+owner_uid="$(id -u)"
+home="${HOME:-}"
+[[ -n "$home" && "$home" = /* ]] || die 'HOME must be an absolute path'
+[[ -d "$home" && ! -L "$home" ]] || die 'HOME must be a real directory'
+[[ "$(stat -c %u -- "$home")" = "$owner_uid" ]] || die 'HOME is not owned by the current user'
+home_mode="$(stat -c %a -- "$home")"
+(( (8#$home_mode & 0022) == 0 )) || die 'HOME must not be writable by group or others'
+
+ensure_owned_directory() {
+  local path="$1"
+  if [[ -L "$path" ]]; then
+    die "refusing symlinked installation directory: $path"
+  fi
+  if [[ -e "$path" ]]; then
+    [[ -d "$path" ]] || die "installation path is not a directory: $path"
+    [[ "$(stat -c %u -- "$path")" = "$owner_uid" ]] ||
+      die "installation directory is not owned by the current user: $path"
+    local mode
+    mode="$(stat -c %a -- "$path")"
+    (( (8#$mode & 0022) == 0 )) ||
+      die "installation directory is writable by group or others: $path"
+  else
+    mkdir -m 0700 -- "$path"
+  fi
+}
+
+check_destination() {
+  local path="$1"
+  [[ ! -L "$path" ]] || die "refusing symlinked destination: $path"
+  if [[ -e "$path" ]]; then
+    [[ -f "$path" ]] || die "destination is not a regular file: $path"
+    [[ "$(stat -c %u -- "$path")" = "$owner_uid" ]] ||
+      die "destination is not owned by the current user: $path"
+  fi
+}
+
+validate_trusted_executable() {
+  local path="$1"
+  local owner mode current child_owner
+  [[ "$path" = /nix/store/* ]] && return
+  owner="$(stat -c %u -- "$path")"
+  mode="$(stat -c %a -- "$path")"
+  [[ "$owner" = 0 || "$owner" = "$owner_uid" ]] ||
+    die "executable has an unsafe owner: $path"
+  (( (8#$mode & 0022) == 0 )) || die "executable is writable by group or others: $path"
+
+  child_owner="$owner"
+  current="${path%/*}"
+  while :; do
+    owner="$(stat -c %u -- "$current")"
+    mode="$(stat -c %a -- "$current")"
+    if [[ "$current" != / ]]; then
+      [[ "$owner" = 0 || "$owner" = "$owner_uid" ]] ||
+        die "executable ancestor has an unsafe owner: $current"
+    fi
+    if (( (8#$mode & 0022) != 0 )); then
+      (( (8#$mode & 01000) != 0 )) && [[ "$child_owner" = "$owner_uid" ]] ||
+        die "executable ancestor is writable by another user: $current"
+    fi
+    [[ "$current" = / ]] && break
+    child_owner="$owner"
+    current="${current%/*}"
+    [[ -n "$current" ]] || current=/
+  done
+}
+
+resolve_executable() {
+  local name="$1"
+  local found
+  found="$(command -v -- "$name")" || die "required executable not found: $name"
+  found="$(realpath -e -- "$found")"
+  [[ -f "$found" && -x "$found" ]] || die "not a regular executable: $found"
+  validate_trusted_executable "$found"
+  printf '%s\n' "$found"
+}
 
 repo_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-bin_dir="${HOME}/.local/bin"
-extension_dir="${HOME}/.local/share/vlc/lua/extensions"
-libexec_dir="${HOME}/.local/libexec/vlsubsync"
+python_bin="$(resolve_executable python3)"
+bash_bin="$(resolve_executable bash)"
+ffs_bin="$(resolve_executable ffs)"
+ffmpeg_bin="$(resolve_executable ffmpeg)"
+runtime_path="${ffmpeg_bin%/*}:${python_bin%/*}"
 
-mkdir -p "$bin_dir" "$extension_dir" "$libexec_dir"
-python3 -m zipapp "$repo_dir/vlsubsync" -m 'helper:main' \
-  -o "$libexec_dir/vlsubsync-helper.pyz"
-install -m 0644 "$repo_dir/vlsubsync.lua" "$extension_dir/vlsubsync.lua"
+ensure_owned_directory "$home/.local"
+ensure_owned_directory "$home/.local/bin"
+ensure_owned_directory "$home/.local/share"
+ensure_owned_directory "$home/.local/share/vlc"
+ensure_owned_directory "$home/.local/share/vlc/lua"
+ensure_owned_directory "$home/.local/share/vlc/lua/extensions"
+ensure_owned_directory "$home/.local/libexec"
+ensure_owned_directory "$home/.local/libexec/vlsubsync"
 
+bin_dir="$home/.local/bin"
+extension_dir="$home/.local/share/vlc/lua/extensions"
+libexec_dir="$home/.local/libexec/vlsubsync"
 wrapper="$bin_dir/vlsubsync-helper"
-# The single-quoted line is intentional: HOME and argv expand when the wrapper runs.
-# shellcheck disable=SC2016
-printf '%s\n' '#!/usr/bin/env bash' \
-  'exec python3 "$HOME/.local/libexec/vlsubsync/vlsubsync-helper.pyz" "$@"' \
-  > "$wrapper"
-chmod 0755 "$wrapper"
+extension="$extension_dir/vlsubsync.lua"
+archive="$libexec_dir/vlsubsync-helper.pyz"
 
-printf 'Installed helper: %s\nInstalled extension: %s\n' \
-  "$wrapper" "$extension_dir/vlsubsync.lua"
-printf 'Ensure ffsubsync (the ffs command) and FFmpeg are available, then restart VLC.\n'
+check_destination "$wrapper"
+check_destination "$extension"
+check_destination "$archive"
+
+archive_tmp="$(mktemp "$libexec_dir/.vlsubsync-helper.XXXXXX")"
+extension_tmp="$(mktemp "$extension_dir/.vlsubsync.XXXXXX")"
+wrapper_tmp="$(mktemp "$bin_dir/.vlsubsync-helper.XXXXXX")"
+cleanup() {
+  rm -f -- "$archive_tmp" "$extension_tmp" "$wrapper_tmp"
+}
+trap cleanup EXIT
+
+"$python_bin" -m zipapp "$repo_dir/vlsubsync" -m 'helper:main' -o "$archive_tmp"
+chmod 0600 "$archive_tmp"
+install -m 0600 "$repo_dir/vlsubsync.lua" "$extension_tmp"
+printf '#!%s\nexport VLSUBSYNC_FFS=%q\nexport PATH=%q\nexec %q %q "$@"\n' \
+  "$bash_bin" "$ffs_bin" "$runtime_path" "$python_bin" "$archive" > "$wrapper_tmp"
+chmod 0700 "$wrapper_tmp"
+
+mv -fT -- "$archive_tmp" "$archive"
+mv -fT -- "$extension_tmp" "$extension"
+mv -fT -- "$wrapper_tmp" "$wrapper"
+trap - EXIT
+
+printf 'Installed helper: %s\nInstalled extension: %s\n' "$wrapper" "$extension"
+printf 'Using ffsubsync: %s\nRestart VLC to load the extension.\n' "$ffs_bin"

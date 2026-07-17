@@ -46,4 +46,10 @@ local injected_status = parse_helper_output(
 )
 assert(injected_status == "error")
 
+local oversized_status = parse_helper_output(
+  "VLSUBSYNC_ERROR_HEX\t" .. string.rep("61", 70000)
+)
+assert(oversized_status == "error")
+assert(safe_display("line one\nline two\27", 100) == "line one?line two?")
+
 print("lua extension tests passed")

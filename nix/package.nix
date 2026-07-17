@@ -29,12 +29,8 @@ stdenvNoCC.mkDerivation {
       "$out/libexec/vlsubsync-helper.pyz"
     makeWrapper ${python3}/bin/python "$out/bin/vlsubsync-helper" \
       --add-flags "$out/libexec/vlsubsync-helper.pyz" \
-      --prefix PATH : ${
-        lib.makeBinPath [
-          ffsubsync
-          ffmpeg
-        ]
-      }
+      --set VLSUBSYNC_FFS ${ffsubsync}/bin/ffs \
+      --set PATH ${lib.makeBinPath [ ffmpeg ]}
 
     install -Dm644 vlsubsync.lua \
       "$out/share/vlc/lua/extensions/vlsubsync.lua"

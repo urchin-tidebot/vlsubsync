@@ -56,14 +56,17 @@
                 nativeBuildInputs = with pkgs; [
                   python3
                   lua5_1
+                  shellcheck
                 ];
               }
               ''
                 cp -r ${self} source
                 chmod -R u+w source
                 cd source
-                python -m unittest discover -s tests -v
+                python -W error::ResourceWarning -m unittest discover -s tests -v
                 lua tests/test_extension.lua
+                bash ./tests/test_installer.sh
+                shellcheck scripts/install-user tests/test_installer.sh
                 touch "$out"
               '';
 
