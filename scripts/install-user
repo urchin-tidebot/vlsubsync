@@ -71,11 +71,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-python3 -m zipapp "$repo_dir/vlsubsync" \
-  -m 'helper:main' \
-  -p '/usr/bin/env python3' \
-  -o "$helper_tmp"
-chmod 0700 "$helper_tmp"
+install -m 0700 "$repo_dir/vlsubsync/helper.py" "$helper_tmp"
 install -m 0600 "$repo_dir/vlsubsync.lua" "$extension_tmp"
 
 mv -fT -- "$helper_tmp" "$helper"

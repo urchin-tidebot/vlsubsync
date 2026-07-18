@@ -39,15 +39,10 @@ on the runtime `PATH`:
 
 1. Install `vlsubsync.lua` as
    `~/.local/share/vlc/lua/extensions/vlsubsync.lua`.
-2. Create the executable helper zipapp:
+2. Install the included helper:
 
    ```bash
-   mkdir -p ~/.local/bin
-   python3 -m zipapp vlsubsync \
-     -m helper:main \
-     -p '/usr/bin/env python3' \
-     -o ~/.local/bin/vlsubsync-helper
-   chmod 700 ~/.local/bin/vlsubsync-helper
+   install -Dm700 vlsubsync/helper.py ~/.local/bin/vlsubsync-helper
    ```
 
 3. Restart VLC.
@@ -166,7 +161,7 @@ With Python, `ffs`, and FFmpeg already on `PATH`:
 ./scripts/install-user
 ```
 
-The installer creates a directly executable helper zipapp at
+The installer copies the included helper to
 `~/.local/bin/vlsubsync-helper` and installs the Lua extension. It does not
 install dependencies or record absolute paths for Python, `ffs`, or FFmpeg;
 those commands are resolved from `PATH` each time the helper runs. Ensure that

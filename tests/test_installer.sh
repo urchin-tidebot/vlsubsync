@@ -56,6 +56,7 @@ else
 fi
 test "$(stat -c %a -- "$home/.local/bin/vlsubsync-helper")" = 700
 test "$(stat -c %a -- "$home/.local/share/vlc/lua/extensions/vlsubsync.lua")" = 600
+cmp -s "$repo_dir/vlsubsync/helper.py" "$home/.local/bin/vlsubsync-helper"
 IFS= read -r helper_shebang < "$home/.local/bin/vlsubsync-helper"
 test "$helper_shebang" = '#!/usr/bin/env python3'
 test ! -e "$home/.local/libexec/vlsubsync"

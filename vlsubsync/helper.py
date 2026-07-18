@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Core discovery and synchronization logic for VLSubSync."""
 
 from __future__ import annotations
