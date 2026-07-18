@@ -14,29 +14,22 @@ stdenvNoCC.mkDerivation {
 
   nativeBuildInputs = [ makeWrapper ];
 
-  buildPhase = ''
-    runHook preBuild
-    # Nix normalizes source mtimes to the Unix epoch, but ZIP requires 1980+.
-    touch -d '1980-01-02 UTC' vlsubsync/__init__.py vlsubsync/helper.py
-    ${python3}/bin/python -m zipapp vlsubsync \
-      -m 'helper:main' -o vlsubsync-helper.pyz
-    runHook postBuild
-  '';
+  dontBuild = true;
 
   installPhase = ''
     runHook preInstall
-    install -Dm644 vlsubsync-helper.pyz \
-      "$out/libexec/vlsubsync-helper.pyz"
-    makeWrapper ${python3}/bin/python "$out/bin/vlsubsync-helper" \
-      --add-flags "$out/libexec/vlsubsync-helper.pyz" \
+    substituteInPlace vlsubsync \
+      --replace-fail '#!/usr/bin/env python3' '#!${python3}/bin/python3'
+    install -Dm755 vlsubsync "$out/bin/vlsubsync"
+    wrapProgram "$out/bin/vlsubsync" \
       --set VLSUBSYNC_FFS ${ffsubsync}/bin/ffs \
       --set PATH ${lib.makeBinPath [ ffmpeg ]}
 
-    install -Dm644 vlsubsync.lua \
+    install -Dm644 extension/vlsubsync.lua \
       "$out/share/vlc/lua/extensions/vlsubsync.lua"
     substituteInPlace "$out/share/vlc/lua/extensions/vlsubsync.lua" \
-      --replace-fail 'local packaged_helper = nil' \
-      "local packaged_helper = \"$out/bin/vlsubsync-helper\""
+      --replace-fail 'local packaged_cli = nil' \
+      "local packaged_cli = \"$out/bin/vlsubsync\""
     runHook postInstall
   '';
 
@@ -44,7 +37,7 @@ stdenvNoCC.mkDerivation {
     description = "One-click synchronization of VLC's current subtitles";
     homepage = "https://github.com/urchin-tidebot/vlsubsync";
     license = lib.licenses.mit;
-    mainProgram = "vlsubsync-helper";
+    mainProgram = "vlsubsync";
     platforms = lib.platforms.linux;
   };
 }

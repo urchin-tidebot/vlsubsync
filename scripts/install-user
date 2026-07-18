@@ -43,52 +43,11 @@ check_destination() {
   fi
 }
 
-validate_trusted_executable() {
-  local path="$1"
-  local owner mode current child_owner
-  [[ "$path" = /nix/store/* ]] && return
-  owner="$(stat -c %u -- "$path")"
-  mode="$(stat -c %a -- "$path")"
-  [[ "$owner" = 0 || "$owner" = "$owner_uid" ]] ||
-    die "executable has an unsafe owner: $path"
-  (( (8#$mode & 0022) == 0 )) || die "executable is writable by group or others: $path"
-
-  child_owner="$owner"
-  current="${path%/*}"
-  while :; do
-    owner="$(stat -c %u -- "$current")"
-    mode="$(stat -c %a -- "$current")"
-    if [[ "$current" != / ]]; then
-      [[ "$owner" = 0 || "$owner" = "$owner_uid" ]] ||
-        die "executable ancestor has an unsafe owner: $current"
-    fi
-    if (( (8#$mode & 0022) != 0 )); then
-      (( (8#$mode & 01000) != 0 )) && [[ "$child_owner" = "$owner_uid" ]] ||
-        die "executable ancestor is writable by another user: $current"
-    fi
-    [[ "$current" = / ]] && break
-    child_owner="$owner"
-    current="${current%/*}"
-    [[ -n "$current" ]] || current=/
-  done
-}
-
-resolve_executable() {
-  local name="$1"
-  local found
-  found="$(command -v -- "$name")" || die "required executable not found: $name"
-  found="$(realpath -e -- "$found")"
-  [[ -f "$found" && -x "$found" ]] || die "not a regular executable: $found"
-  validate_trusted_executable "$found"
-  printf '%s\n' "$found"
-}
+for dependency in python3 ffs ffmpeg; do
+  command -v -- "$dependency" >/dev/null || die "required executable not found on PATH: $dependency"
+done
 
 repo_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-python_bin="$(resolve_executable python3)"
-bash_bin="$(resolve_executable bash)"
-ffs_bin="$(resolve_executable ffs)"
-ffmpeg_bin="$(resolve_executable ffmpeg)"
-runtime_path="${ffmpeg_bin%/*}:${python_bin%/*}"
 
 ensure_owned_directory "$home/.local"
 ensure_owned_directory "$home/.local/bin"
@@ -96,39 +55,28 @@ ensure_owned_directory "$home/.local/share"
 ensure_owned_directory "$home/.local/share/vlc"
 ensure_owned_directory "$home/.local/share/vlc/lua"
 ensure_owned_directory "$home/.local/share/vlc/lua/extensions"
-ensure_owned_directory "$home/.local/libexec"
-ensure_owned_directory "$home/.local/libexec/vlsubsync"
 
 bin_dir="$home/.local/bin"
 extension_dir="$home/.local/share/vlc/lua/extensions"
-libexec_dir="$home/.local/libexec/vlsubsync"
-wrapper="$bin_dir/vlsubsync-helper"
+cli="$bin_dir/vlsubsync"
 extension="$extension_dir/vlsubsync.lua"
-archive="$libexec_dir/vlsubsync-helper.pyz"
 
-check_destination "$wrapper"
+check_destination "$cli"
 check_destination "$extension"
-check_destination "$archive"
 
-archive_tmp="$(mktemp "$libexec_dir/.vlsubsync-helper.XXXXXX")"
+cli_tmp="$(mktemp "$bin_dir/.vlsubsync.XXXXXX")"
 extension_tmp="$(mktemp "$extension_dir/.vlsubsync.XXXXXX")"
-wrapper_tmp="$(mktemp "$bin_dir/.vlsubsync-helper.XXXXXX")"
 cleanup() {
-  rm -f -- "$archive_tmp" "$extension_tmp" "$wrapper_tmp"
+  rm -f -- "$cli_tmp" "$extension_tmp"
 }
 trap cleanup EXIT
 
-"$python_bin" -m zipapp "$repo_dir/vlsubsync" -m 'helper:main' -o "$archive_tmp"
-chmod 0600 "$archive_tmp"
-install -m 0600 "$repo_dir/vlsubsync.lua" "$extension_tmp"
-printf '#!%s\nexport VLSUBSYNC_FFS=%q\nexport PATH=%q\nexec %q %q "$@"\n' \
-  "$bash_bin" "$ffs_bin" "$runtime_path" "$python_bin" "$archive" > "$wrapper_tmp"
-chmod 0700 "$wrapper_tmp"
+install -m 0700 "$repo_dir/vlsubsync" "$cli_tmp"
+install -m 0600 "$repo_dir/extension/vlsubsync.lua" "$extension_tmp"
 
-mv -fT -- "$archive_tmp" "$archive"
+mv -fT -- "$cli_tmp" "$cli"
 mv -fT -- "$extension_tmp" "$extension"
-mv -fT -- "$wrapper_tmp" "$wrapper"
 trap - EXIT
 
-printf 'Installed helper: %s\nInstalled extension: %s\n' "$wrapper" "$extension"
-printf 'Using ffsubsync: %s\nRestart VLC to load the extension.\n' "$ffs_bin"
+printf 'Installed CLI: %s\nInstalled extension: %s\n' "$cli" "$extension"
+printf 'Using ffs and ffmpeg from PATH. Restart VLC to load the extension.\n'

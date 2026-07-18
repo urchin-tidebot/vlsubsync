@@ -1,21 +1,30 @@
 from __future__ import annotations
 
+import importlib.machinery
+import importlib.util
 import os
 import sys
 import tempfile
 import time
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
 from pathlib import Path
 from unittest import mock
 
-from vlsubsync.helper import (
-    AmbiguousSubtitleError,
-    SubtitleDiscoveryError,
-    _run_ffs,
-    discover_subtitle,
-    make_output_path,
-    synchronize,
-)
+CLI_PATH = Path(__file__).resolve().parents[1] / "vlsubsync"
+CLI_LOADER = importlib.machinery.SourceFileLoader("vlsubsync_cli", str(CLI_PATH))
+CLI_SPEC = importlib.util.spec_from_loader(CLI_LOADER.name, CLI_LOADER)
+assert CLI_SPEC is not None
+cli_module = importlib.util.module_from_spec(CLI_SPEC)
+CLI_LOADER.exec_module(cli_module)
+
+AmbiguousSubtitleError = cli_module.AmbiguousSubtitleError
+SubtitleDiscoveryError = cli_module.SubtitleDiscoveryError
+_run_ffs = cli_module._run_ffs
+discover_subtitle = cli_module.discover_subtitle
+make_output_path = cli_module.make_output_path
+synchronize = cli_module.synchronize
 
 
 class DiscoverSubtitleTests(unittest.TestCase):
@@ -255,7 +264,7 @@ class SynchronizeTests(unittest.TestCase):
         self.assertFalse(called)
 
     def test_rejects_oversized_subtitle(self) -> None:
-        with mock.patch("vlsubsync.helper.MAX_SUBTITLE_BYTES", 4):
+        with mock.patch.object(cli_module, "MAX_SUBTITLE_BYTES", 4):
             with self.assertRaisesRegex(SubtitleDiscoveryError, "too large"):
                 synchronize(
                     self.media,
@@ -287,6 +296,74 @@ class SynchronizeTests(unittest.TestCase):
         time.sleep(0.3)
 
         self.assertFalse(marker.exists())
+
+
+class CliTests(unittest.TestCase):
+    def run_main(self, argv: list[str]) -> tuple[int, str, str]:
+        stdout = StringIO()
+        stderr = StringIO()
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            result = cli_module.main(argv)
+        return result, stdout.getvalue(), stderr.getvalue()
+
+    def test_default_output_is_the_synchronized_subtitle_path(self) -> None:
+        output = Path("/tmp/Movie.en.synced.srt")
+        with (
+            mock.patch.object(
+                cli_module, "discover_subtitle", return_value=Path("Movie.en.srt")
+            ),
+            mock.patch.object(cli_module, "synchronize", return_value=output),
+        ):
+            result, stdout, stderr = self.run_main(["Movie.mkv"])
+
+        self.assertEqual(result, 0)
+        self.assertEqual(stdout, f"{output}\n")
+        self.assertEqual(stderr, "")
+
+    def test_protocol_output_remains_hex_encoded_for_lua(self) -> None:
+        output = Path("/tmp/Movie.en.synced.srt")
+        with (
+            mock.patch.object(
+                cli_module, "discover_subtitle", return_value=Path("Movie.en.srt")
+            ),
+            mock.patch.object(cli_module, "synchronize", return_value=output),
+        ):
+            result, stdout, stderr = self.run_main(["--protocol", "Movie.mkv"])
+
+        self.assertEqual(result, 0)
+        self.assertEqual(
+            stdout,
+            f"VLSUBSYNC_OK_HEX\t{str(output).encode('utf-8').hex()}\n",
+        )
+        self.assertEqual(stderr, "")
+
+    def test_protocol_errors_remain_hex_encoded_for_lua(self) -> None:
+        message = "no matching subtitle\nwith injected marker"
+        with mock.patch.object(
+            cli_module,
+            "discover_subtitle",
+            side_effect=SubtitleDiscoveryError(message),
+        ):
+            result, stdout, stderr = self.run_main(["--protocol", "Movie.mkv"])
+
+        self.assertEqual(result, 1)
+        self.assertEqual(
+            stdout,
+            f"VLSUBSYNC_ERROR_HEX\t{message.encode('utf-8').hex()}\n",
+        )
+        self.assertEqual(stderr, "")
+
+    def test_default_errors_are_human_readable(self) -> None:
+        with mock.patch.object(
+            cli_module,
+            "discover_subtitle",
+            side_effect=SubtitleDiscoveryError("no matching subtitle"),
+        ):
+            result, stdout, stderr = self.run_main(["Movie.mkv"])
+
+        self.assertEqual(result, 1)
+        self.assertEqual(stdout, "")
+        self.assertEqual(stderr, "vlsubsync: no matching subtitle\n")
 
 
 if __name__ == "__main__":
