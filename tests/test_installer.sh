@@ -15,12 +15,6 @@ test_path="$fake_bin:$PATH"
 
 home="$tmp/home"
 mkdir -p "$home/.local/bin"
-chmod 0777 "$fake_bin"
-if HOME="$home" PATH="$test_path" bash "$repo_dir/scripts/install-user" >/dev/null 2>&1; then
-  printf 'installer unexpectedly accepted an executable from a writable directory\n' >&2
-  exit 1
-fi
-chmod 0755 "$fake_bin"
 
 sentinel="$tmp/sentinel"
 printf 'safe\n' > "$sentinel"
@@ -55,8 +49,14 @@ fi
 rm -rf -- "$home"
 mkdir -m 0700 -- "$home"
 HOME="$home" PATH="$test_path" bash "$repo_dir/scripts/install-user" >/dev/null
-"$home/.local/bin/vlsubsync-helper" --help >/dev/null
+if [[ -x /usr/bin/env ]]; then
+  "$home/.local/bin/vlsubsync-helper" --help >/dev/null
+else
+  python3 "$home/.local/bin/vlsubsync-helper" --help >/dev/null
+fi
 test "$(stat -c %a -- "$home/.local/bin/vlsubsync-helper")" = 700
-test "$(stat -c %a -- "$home/.local/libexec/vlsubsync/vlsubsync-helper.pyz")" = 600
 test "$(stat -c %a -- "$home/.local/share/vlc/lua/extensions/vlsubsync.lua")" = 600
+IFS= read -r helper_shebang < "$home/.local/bin/vlsubsync-helper"
+test "$helper_shebang" = '#!/usr/bin/env python3'
+test ! -e "$home/.local/libexec/vlsubsync"
 printf 'installer security tests passed\n'

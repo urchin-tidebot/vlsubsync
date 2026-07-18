@@ -34,16 +34,22 @@ lua tests/test_extension.lua
 ## Manual installation
 
 Experienced users can install VLSubSync with any preferred package or dotfile
-manager:
+manager. This assumes `python3`, `ffs`, and `ffmpeg` are installed and available
+on the runtime `PATH`:
 
 1. Install `vlsubsync.lua` as
    `~/.local/share/vlc/lua/extensions/vlsubsync.lua`.
-2. Provide an executable helper at `~/.local/bin/vlsubsync-helper`. The
-   [portable installer](#portable-per-user-install) generates this helper and
-   its zipapp automatically. Custom package definitions should generate an
-   equivalent wrapper that runs `vlsubsync.helper` with Python 3, sets
-   `VLSUBSYNC_FFS` to the absolute path of `ffs`, and includes the FFmpeg binary
-   directory on `PATH`.
+2. Create the executable helper zipapp:
+
+   ```bash
+   mkdir -p ~/.local/bin
+   python3 -m zipapp vlsubsync \
+     -m helper:main \
+     -p '/usr/bin/env python3' \
+     -o ~/.local/bin/vlsubsync-helper
+   chmod 700 ~/.local/bin/vlsubsync-helper
+   ```
+
 3. Restart VLC.
 
 Keep the installed files and directories user-owned and not writable by group
@@ -160,7 +166,14 @@ With Python, `ffs`, and FFmpeg already on `PATH`:
 ./scripts/install-user
 ```
 
-The installer resolves and records the absolute Python, `ffs`, and FFmpeg paths, constructs a minimal runtime `PATH`, and refuses symlinked installation directories or destination files. It intentionally supports only user-owned directories that are not writable by group or others under `~/.local`. Because dependency selection happens at installation time, run the installer only with a trusted `PATH`.
+The installer creates a directly executable helper zipapp at
+`~/.local/bin/vlsubsync-helper` and installs the Lua extension. It does not
+install dependencies or record absolute paths for Python, `ffs`, or FFmpeg;
+those commands are resolved from `PATH` each time the helper runs. Ensure that
+VLC inherits a trusted `PATH` containing them. The installer still refuses
+symlinked installation directories or destination files and supports only
+user-owned directories that are not writable by group or others under
+`~/.local`.
 
 Restart VLC, then choose **View → VLSubSync** and click **Resync current subtitles**. Depending on the desktop integration, VLC extensions may instead appear under **Tools → Plugins and extensions**.
 
