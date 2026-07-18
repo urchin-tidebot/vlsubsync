@@ -86,10 +86,18 @@
                 touch "$out/bin/ffs"
                 chmod +x "$out/bin/ffs"
               '';
+              fakeFfmpeg = pkgs.runCommand "fake-ffmpeg" { } ''
+                mkdir -p "$out/bin"
+                touch "$out/bin/ffmpeg"
+                chmod +x "$out/bin/ffmpeg"
+              '';
               composedPkgs = import nixpkgs {
                 inherit system;
                 overlays = [
-                  (_final: _prev: { ffsubsync = fakeFfsubsync; })
+                  (_final: _prev: {
+                    ffmpeg = fakeFfmpeg;
+                    ffsubsync = fakeFfsubsync;
+                  })
                   self.overlays.default
                 ];
               };
@@ -97,8 +105,12 @@
             assert overlayPkgs.vlsubsync == self.packages.${system}.vlsubsync;
             assert self.packages.${system}.default == self.packages.${system}.vlsubsync;
             pkgs.runCommand "vlsubsync-overlay-test" { } ''
-              test -x ${overlayPkgs.vlsubsync}/bin/vlsubsync-helper
+              test -x ${overlayPkgs.vlsubsync}/bin/vlsubsync
+              ${overlayPkgs.vlsubsync}/bin/vlsubsync --help >/dev/null
+              grep -F '#!${overlayPkgs.python3}/bin/python3' \
+                ${overlayPkgs.vlsubsync}/bin/.vlsubsync-wrapped
               grep -R -F '${fakeFfsubsync}/bin' ${composedPkgs.vlsubsync}/bin
+              grep -R -F '${fakeFfmpeg}/bin' ${composedPkgs.vlsubsync}/bin
               touch "$out"
             '';
         }

@@ -501,10 +501,17 @@ def _protocol_encode(value: str) -> str:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Synchronize VLC's current subtitles")
+    parser = argparse.ArgumentParser(
+        prog="vlsubsync", description="Synchronize subtitles with local media"
+    )
     parser.add_argument("media", type=Path)
     parser.add_argument("--track-name", default=None)
     parser.add_argument("--subtitle", type=Path, default=None)
+    parser.add_argument(
+        "--protocol",
+        action="store_true",
+        help="emit the encoded response protocol used by the VLC extension",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -513,10 +520,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         output = synchronize(args.media, subtitle)
     except Exception as exc:
-        print(f"VLSUBSYNC_ERROR_HEX\t{_protocol_encode(str(exc))}")
+        if args.protocol:
+            print(f"VLSUBSYNC_ERROR_HEX\t{_protocol_encode(str(exc))}")
+        else:
+            print(f"vlsubsync: {exc}", file=sys.stderr)
         return 1
 
-    print(f"VLSUBSYNC_OK_HEX\t{_protocol_encode(str(output))}")
+    if args.protocol:
+        print(f"VLSUBSYNC_OK_HEX\t{_protocol_encode(str(output))}")
+    else:
+        print(output)
     return 0
 
 

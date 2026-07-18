@@ -70,7 +70,7 @@ assert toString customExtension.source == "${customPackage}/share/vlc/lua/extens
 assert !(builtins.elem disabledCfg.programs.vlsubsync.package disabledCfg.home.packages);
 assert !(disabledCfg.xdg.dataFile ? "vlc/lua/extensions/vlsubsync.lua");
 pkgs.runCommand "vlsubsync-home-manager-module-test" { } ''
-  grep -F 'local packaged_helper = "${package}/bin/vlsubsync-helper"' \
+  grep -F 'local packaged_cli = "${package}/bin/vlsubsync"' \
     ${extension.source}
   test -f ${customExtension.source}
   touch "$out"

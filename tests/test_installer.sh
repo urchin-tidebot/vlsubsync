@@ -18,14 +18,36 @@ mkdir -p "$home/.local/bin"
 
 sentinel="$tmp/sentinel"
 printf 'safe\n' > "$sentinel"
-ln -s "$sentinel" "$home/.local/bin/vlsubsync-helper"
+ln -s "$sentinel" "$home/.local/bin/vlsubsync"
 
 if HOME="$home" PATH="$test_path" bash "$repo_dir/scripts/install-user" >/dev/null 2>&1; then
-  printf 'installer unexpectedly accepted a symlinked wrapper destination\n' >&2
+  printf 'installer unexpectedly accepted a symlinked CLI destination\n' >&2
   exit 1
 fi
 
 test "$(cat "$sentinel")" = safe
+
+rm -rf -- "$home"
+mkdir -p "$home/.local/bin" "$home/.local/share/vlc/lua/extensions"
+ln -s "$sentinel" "$home/.local/share/vlc/lua/extensions/vlsubsync.lua"
+
+if HOME="$home" PATH="$test_path" bash "$repo_dir/scripts/install-user" >/dev/null 2>&1; then
+  printf 'installer unexpectedly accepted a symlinked extension destination\n' >&2
+  exit 1
+fi
+
+test "$(cat "$sentinel")" = safe
+
+rm -rf -- "$home" "$tmp/outside-lua"
+mkdir -p "$home/.local/bin" "$home/.local/share/vlc" "$tmp/outside-lua"
+ln -s "$tmp/outside-lua" "$home/.local/share/vlc/lua"
+
+if HOME="$home" PATH="$test_path" bash "$repo_dir/scripts/install-user" >/dev/null 2>&1; then
+  printf 'installer unexpectedly accepted a symlinked extension directory\n' >&2
+  exit 1
+fi
+
+test ! -e "$tmp/outside-lua/extensions/vlsubsync.lua"
 
 rm -rf -- "$home"
 mkdir -p "$home/.local" "$tmp/outside"
@@ -36,7 +58,7 @@ if HOME="$home" PATH="$test_path" bash "$repo_dir/scripts/install-user" >/dev/nu
   exit 1
 fi
 
-test ! -e "$tmp/outside/vlsubsync-helper"
+test ! -e "$tmp/outside/vlsubsync"
 
 rm -rf -- "$home"
 mkdir -m 0700 -- "$home"
@@ -50,14 +72,16 @@ rm -rf -- "$home"
 mkdir -m 0700 -- "$home"
 HOME="$home" PATH="$test_path" bash "$repo_dir/scripts/install-user" >/dev/null
 if [[ -x /usr/bin/env ]]; then
-  "$home/.local/bin/vlsubsync-helper" --help >/dev/null
+  "$home/.local/bin/vlsubsync" --help >/dev/null
 else
-  python3 "$home/.local/bin/vlsubsync-helper" --help >/dev/null
+  python3 "$home/.local/bin/vlsubsync" --help >/dev/null
 fi
-test "$(stat -c %a -- "$home/.local/bin/vlsubsync-helper")" = 700
+test "$(stat -c %a -- "$home/.local/bin/vlsubsync")" = 700
 test "$(stat -c %a -- "$home/.local/share/vlc/lua/extensions/vlsubsync.lua")" = 600
-cmp -s "$repo_dir/vlsubsync/helper.py" "$home/.local/bin/vlsubsync-helper"
-IFS= read -r helper_shebang < "$home/.local/bin/vlsubsync-helper"
-test "$helper_shebang" = '#!/usr/bin/env python3'
+cmp -s "$repo_dir/vlsubsync" "$home/.local/bin/vlsubsync"
+cmp -s "$repo_dir/extension/vlsubsync.lua" \
+  "$home/.local/share/vlc/lua/extensions/vlsubsync.lua"
+IFS= read -r cli_shebang < "$home/.local/bin/vlsubsync"
+test "$cli_shebang" = '#!/usr/bin/env python3'
 test ! -e "$home/.local/libexec/vlsubsync"
 printf 'installer security tests passed\n'

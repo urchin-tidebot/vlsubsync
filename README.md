@@ -37,19 +37,55 @@ Experienced users can install VLSubSync with any preferred package or dotfile
 manager. This assumes `python3`, `ffs`, and `ffmpeg` are installed and available
 on the runtime `PATH`:
 
-1. Install `vlsubsync.lua` as
-   `~/.local/share/vlc/lua/extensions/vlsubsync.lua`.
-2. Install the included helper:
+1. Install the standalone CLI:
 
    ```bash
-   install -Dm700 vlsubsync/helper.py ~/.local/bin/vlsubsync-helper
+   install -Dm700 vlsubsync ~/.local/bin/vlsubsync
+   ```
+
+2. Install the VLC extension:
+
+   ```bash
+   install -Dm600 extension/vlsubsync.lua \
+     ~/.local/share/vlc/lua/extensions/vlsubsync.lua
    ```
 
 3. Restart VLC.
 
 Keep the installed files and directories user-owned and not writable by group
-or others. For a different helper location, set `packaged_helper` in
-`vlsubsync.lua` to its absolute path.
+or others. For a different CLI location, set `packaged_cli` in
+`extension/vlsubsync.lua` to its absolute path.
+
+## Command-line usage
+
+Let `vlsubsync` discover the most likely subtitle beside a video:
+
+```bash
+vlsubsync ~/Videos/Movie.mkv
+```
+
+Synchronize a specific subtitle:
+
+```bash
+vlsubsync ~/Videos/Movie.mkv --subtitle ~/Videos/Movie.en.srt
+```
+
+Provide a selected-track hint when filenames alone are insufficient:
+
+```bash
+vlsubsync ~/Videos/Movie.mkv --track-name "English [CC]"
+```
+
+On success, stdout contains only the corrected subtitle path, so it can be used
+by another command:
+
+```bash
+synced="$(vlsubsync ~/Videos/Movie.mkv)"
+vlc --sub-file "$synced" ~/Videos/Movie.mkv
+```
+
+`--protocol` emits the strict encoded response consumed by the VLC extension
+and is intended for machine integration.
 
 ## Home Manager (recommended)
 
@@ -86,9 +122,9 @@ For Home Manager embedded in a NixOS configuration:
 }
 ```
 
-The module installs the helper and declaratively links the extension to
+The module installs the CLI and declaratively links the extension to
 `$XDG_DATA_HOME/vlc/lua/extensions/vlsubsync.lua`. The Nix-built extension
-contains the helper's absolute store path, so desktop-launched VLC does not
+contains the CLI's absolute store path, so desktop-launched VLC does not
 need to inherit a particular `PATH`.
 
 To override the package:
@@ -161,11 +197,11 @@ With Python, `ffs`, and FFmpeg already on `PATH`:
 ./scripts/install-user
 ```
 
-The installer copies the included helper to
-`~/.local/bin/vlsubsync-helper` and installs the Lua extension. It does not
-install dependencies or record absolute paths for Python, `ffs`, or FFmpeg;
-those commands are resolved from `PATH` each time the helper runs. Ensure that
-VLC inherits a trusted `PATH` containing them. The installer still refuses
+The installer copies the included CLI to `~/.local/bin/vlsubsync` and installs
+the Lua extension. It does not install dependencies or record absolute paths
+for Python, `ffs`, or FFmpeg; those commands are resolved from `PATH` each time
+the CLI runs. Ensure that VLC inherits a trusted `PATH` containing them. The
+installer still refuses
 symlinked installation directories or destination files and supports only
 user-owned directories that are not writable by group or others under
 `~/.local`.
@@ -179,12 +215,12 @@ Synchronization analyzes the media's audio and commonly takes tens of seconds. P
 - Media and subtitle inputs must be ordinary files; symbolic links, FIFOs, devices, and other special files are rejected.
 - Subtitle content is copied into the private cache before parsing, and the media inode is pinned through an open file descriptor during synchronization.
 - Original subtitle files are never overwritten. Generated output is published atomically without replacing any existing file, symlink, or other object.
-- Subtitle and generated-output sizes, helper diagnostics, and Lua protocol responses are bounded; synchronization is terminated after 15 minutes.
+- Subtitle and generated-output sizes, CLI diagnostics, and Lua protocol responses are bounded; synchronization is terminated after 15 minutes.
 - Previously generated `.synced` files are excluded from candidate discovery.
 - Ambiguous candidates produce an error instead of a guess.
 - Only local media files are supported in V1.
 
-`ffmpeg` and `ffsubsync` still parse untrusted media and subtitle content. Keep those dependencies updated. VLSubSync constrains their inputs, output, runtime, diagnostics, and lingering child processes, but it does not place them in an OS-level privilege sandbox; a successful parser code-execution vulnerability would therefore run with the user's access. Use an externally sandboxed VLC/helper environment when processing media that requires stronger isolation.
+`ffmpeg` and `ffsubsync` still parse untrusted media and subtitle content. Keep those dependencies updated. VLSubSync constrains their inputs, output, runtime, diagnostics, and lingering child processes, but it does not place them in an OS-level privilege sandbox; a successful parser code-execution vulnerability would therefore run with the user's access. Use an externally sandboxed VLC/CLI environment when processing media that requires stronger isolation.
 
 ## Development
 
@@ -193,7 +229,7 @@ nix flake check
 nix build
 ```
 
-The helper tests use Python's standard-library `unittest`; Lua tests run against Lua 5.1, matching VLC's embedded Lua version.
+The CLI tests use Python's standard-library `unittest`; Lua tests run against Lua 5.1, matching VLC's embedded Lua version.
 
 ## License
 

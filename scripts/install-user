@@ -58,25 +58,25 @@ ensure_owned_directory "$home/.local/share/vlc/lua/extensions"
 
 bin_dir="$home/.local/bin"
 extension_dir="$home/.local/share/vlc/lua/extensions"
-helper="$bin_dir/vlsubsync-helper"
+cli="$bin_dir/vlsubsync"
 extension="$extension_dir/vlsubsync.lua"
 
-check_destination "$helper"
+check_destination "$cli"
 check_destination "$extension"
 
-helper_tmp="$(mktemp "$bin_dir/.vlsubsync-helper.XXXXXX")"
+cli_tmp="$(mktemp "$bin_dir/.vlsubsync.XXXXXX")"
 extension_tmp="$(mktemp "$extension_dir/.vlsubsync.XXXXXX")"
 cleanup() {
-  rm -f -- "$helper_tmp" "$extension_tmp"
+  rm -f -- "$cli_tmp" "$extension_tmp"
 }
 trap cleanup EXIT
 
-install -m 0700 "$repo_dir/vlsubsync/helper.py" "$helper_tmp"
-install -m 0600 "$repo_dir/vlsubsync.lua" "$extension_tmp"
+install -m 0700 "$repo_dir/vlsubsync" "$cli_tmp"
+install -m 0600 "$repo_dir/extension/vlsubsync.lua" "$extension_tmp"
 
-mv -fT -- "$helper_tmp" "$helper"
+mv -fT -- "$cli_tmp" "$cli"
 mv -fT -- "$extension_tmp" "$extension"
 trap - EXIT
 
-printf 'Installed helper: %s\nInstalled extension: %s\n' "$helper" "$extension"
+printf 'Installed CLI: %s\nInstalled extension: %s\n' "$cli" "$extension"
 printf 'Using ffs and ffmpeg from PATH. Restart VLC to load the extension.\n'

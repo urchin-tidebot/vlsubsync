@@ -3,8 +3,8 @@
 
 local dialog = nil
 local status_label = nil
-local packaged_helper = nil
-local MAX_HELPER_OUTPUT_BYTES = 131072
+local packaged_cli = nil
+local MAX_CLI_OUTPUT_BYTES = 131072
 
 function descriptor()
   return {
@@ -74,9 +74,9 @@ function safe_display(value, limit)
   return sanitized
 end
 
-function parse_helper_output(output)
-  if string.len(output) > MAX_HELPER_OUTPUT_BYTES then
-    return "error", "The helper response exceeded the safety limit."
+function parse_protocol_output(output)
+  if string.len(output) > MAX_CLI_OUTPUT_BYTES then
+    return "error", "The CLI response exceeded the safety limit."
   end
   local line = output
   if string.sub(line, -2) == "\r\n" then
@@ -87,29 +87,43 @@ function parse_helper_output(output)
 
   local ok_hex = string.match(line, "^VLSUBSYNC_OK_HEX\t([0-9a-f]+)$")
   if ok_hex then
-    return "ok", decode_hex(ok_hex)
+    local decoded = decode_hex(ok_hex)
+    if decoded then
+      return "ok", decoded
+    end
   end
   local error_hex = string.match(line, "^VLSUBSYNC_ERROR_HEX\t([0-9a-f]+)$")
   if error_hex then
-    return "error", decode_hex(error_hex)
+    local decoded = decode_hex(error_hex)
+    if decoded then
+      return "error", decoded
+    end
   end
-  return "error", "The helper returned an unexpected response."
+  return "error", "The CLI returned an unexpected response."
 end
 
-local function helper_path()
-  if packaged_helper then
-    return packaged_helper
+function cli_path()
+  if packaged_cli then
+    return packaged_cli
   end
 
   if vlc.config and vlc.config.homedir then
-    local installed = vlc.config.homedir() .. "/.local/bin/vlsubsync-helper"
+    local installed = vlc.config.homedir() .. "/.local/bin/vlsubsync"
     local file = io.open(installed, "r")
     if file then
       file:close()
       return installed
     end
   end
-  return "vlsubsync-helper"
+  return "vlsubsync"
+end
+
+function build_cli_command(media, track_name)
+  local command = shell_quote(cli_path()) .. " --protocol " .. shell_quote(media)
+  if track_name then
+    command = command .. " --track-name " .. shell_quote(track_name)
+  end
+  return command .. " 2>&1"
 end
 
 local function add_subtitle(path)
@@ -140,28 +154,24 @@ function sync_current()
   end
 
   set_status("Analyzing audio; playback can continue…")
-  local command = shell_quote(helper_path()) .. " " .. shell_quote(media)
   local track_name = selected_subtitle_name()
-  if track_name then
-    command = command .. " --track-name " .. shell_quote(track_name)
-  end
-  command = command .. " 2>&1"
+  local command = build_cli_command(media, track_name)
 
-  vlc.msg.info("[VLSubSync] Running helper for " .. safe_display(media, 500))
+  vlc.msg.info("[VLSubSync] Running CLI for " .. safe_display(media, 500))
   local pipe = io.popen(command, "r")
   if not pipe then
-    set_status("Error: could not start vlsubsync-helper.")
+    set_status("Error: could not start vlsubsync.")
     return
   end
-  local output = pipe:read(MAX_HELPER_OUTPUT_BYTES + 1) or ""
+  local output = pipe:read(MAX_CLI_OUTPUT_BYTES + 1) or ""
   pipe:close()
 
-  if string.len(output) > MAX_HELPER_OUTPUT_BYTES then
-    set_status("Error: helper response exceeded the safety limit.")
+  if string.len(output) > MAX_CLI_OUTPUT_BYTES then
+    set_status("Error: CLI response exceeded the safety limit.")
     return
   end
 
-  local result, value = parse_helper_output(output)
+  local result, value = parse_protocol_output(output)
   if result ~= "ok" then
     vlc.msg.err("[VLSubSync] " .. safe_display(value, 500))
     set_status("Error: " .. value)
